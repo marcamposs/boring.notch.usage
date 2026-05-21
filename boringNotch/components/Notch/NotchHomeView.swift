@@ -453,6 +453,12 @@ struct NotchHomeView: View {
                     .transition(.opacity)
             }
 
+            if Defaults[.showClaudeUsage] {
+                ClaudeUsageView()
+                    .frame(width: 120)
+                    .transition(.opacity)
+            }
+
             if shouldShowCamera {
                 CameraPreviewView(webcamManager: webcamManager)
                     .scaledToFit()

@@ -83,6 +83,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             screenUnlockedObserver = nil
         }
         MusicManager.shared.destroy()
+        Task { @MainActor in ClaudeUsageManager.shared.stopPolling() }
         cleanupDragDetectors()
         cleanupWindows()
         XPCHelperClient.shared.stopMonitoringAccessibilityAuthorization()
@@ -436,6 +437,31 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         }
 
         previousScreens = NSScreen.screens
+
+        setupClaudeUsagePolling()
+    }
+
+    private func setupClaudeUsagePolling() {
+        Task { @MainActor in
+            if Defaults[.showClaudeUsage] {
+                ClaudeUsageManager.shared.startPolling(interval: Defaults[.claudeUsageRefreshInterval])
+            }
+        }
+        Defaults.observe(.showClaudeUsage) { change in
+            Task { @MainActor in
+                if change.newValue {
+                    ClaudeUsageManager.shared.startPolling(interval: Defaults[.claudeUsageRefreshInterval])
+                } else {
+                    ClaudeUsageManager.shared.stopPolling()
+                }
+            }
+        }.tieToLifetime(of: self)
+        Defaults.observe(.claudeUsageRefreshInterval) { change in
+            Task { @MainActor in
+                guard Defaults[.showClaudeUsage] else { return }
+                ClaudeUsageManager.shared.startPolling(interval: change.newValue)
+            }
+        }.tieToLifetime(of: self)
     }
 
     func playWelcomeSound() {

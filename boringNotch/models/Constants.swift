@@ -176,6 +176,10 @@ extension Defaults.Keys {
     static let hideAllDayEvents = Key<Bool>("hideAllDayEvents", default: false)
     static let showFullEventTitles = Key<Bool>("showFullEventTitles", default: false)
     static let autoScrollToNextEvent = Key<Bool>("autoScrollToNextEvent", default: true)
+
+    // MARK: Claude Usage
+    static let showClaudeUsage = Key<Bool>("showClaudeUsage", default: false)
+    static let claudeUsageRefreshInterval = Key<Double>("claudeUsageRefreshInterval", default: 120)
     
     // MARK: Fullscreen Media Detection
     static let hideNotchOption = Key<HideNotchOption>("hideNotchOption", default: .nowPlayingOnly)

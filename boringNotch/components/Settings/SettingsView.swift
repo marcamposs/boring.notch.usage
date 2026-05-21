@@ -39,6 +39,9 @@ struct SettingsView: View {
                 NavigationLink(value: "Calendar") {
                     Label("Calendar", systemImage: "calendar")
                 }
+                NavigationLink(value: "Claude") {
+                    Label("Claude Usage", systemImage: "sparkle")
+                }
                 NavigationLink(value: "HUD") {
                     Label("HUDs", systemImage: "dial.medium.fill")
                 }
@@ -79,6 +82,8 @@ struct SettingsView: View {
                     Media()
                 case "Calendar":
                     CalendarSettings()
+                case "Claude":
+                    ClaudeSettings()
                 case "HUD":
                     HUD()
                 case "Battery":
@@ -811,6 +816,112 @@ struct CalendarSettings: View {
                 await calendarManager.checkCalendarAuthorization()
                 await calendarManager.checkReminderAuthorization()
             }
+        }
+    }
+}
+
+struct ClaudeSettings: View {
+    @Default(.showClaudeUsage) var showClaudeUsage
+    @Default(.claudeUsageRefreshInterval) var refreshInterval
+    @ObservedObject private var manager = ClaudeUsageManager.shared
+    @State private var apiKeyInput: String = ""
+    @State private var showKey: Bool = false
+
+    var body: some View {
+        Form {
+            Section {
+                Defaults.Toggle(key: .showClaudeUsage) {
+                    Text("Show Claude usage widget")
+                }
+            } header: {
+                Text("General")
+            } footer: {
+                Text("Displays 5-hour and 7-day API token utilization next to the calendar.")
+                    .foregroundStyle(.secondary)
+                    .font(.caption)
+            }
+
+            Section {
+                HStack {
+                    if showKey {
+                        TextField("sk-ant-…", text: $apiKeyInput)
+                            .textFieldStyle(.plain)
+                            .font(.system(.body, design: .monospaced))
+                    } else {
+                        SecureField("sk-ant-…", text: $apiKeyInput)
+                            .textFieldStyle(.plain)
+                            .font(.system(.body, design: .monospaced))
+                    }
+                    Button {
+                        withAnimation { showKey.toggle() }
+                    } label: {
+                        Image(systemName: showKey ? "eye.slash" : "eye")
+                            .foregroundStyle(.secondary)
+                    }
+                    .buttonStyle(PlainButtonStyle())
+                    Button("Save") {
+                        manager.apiKey = apiKeyInput
+                        if showClaudeUsage {
+                            Task { await manager.fetchUsage() }
+                        }
+                    }
+                    .disabled(apiKeyInput.isEmpty)
+                }
+            } header: {
+                Text("API Key")
+            } footer: {
+                Text("Your Anthropic API key. Stored securely in the system Keychain.")
+                    .foregroundStyle(.secondary)
+                    .font(.caption)
+            }
+
+            Section {
+                Slider(value: $refreshInterval, in: 30...300, step: 30) {
+                    HStack {
+                        Text("Refresh interval")
+                        Spacer()
+                        Text("\(Int(refreshInterval))s")
+                            .foregroundStyle(.secondary)
+                    }
+                }
+                .onChange(of: refreshInterval) {
+                    guard showClaudeUsage else { return }
+                    manager.startPolling(interval: refreshInterval)
+                }
+            } header: {
+                Text("Refresh")
+            }
+
+            Section {
+                HStack {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("5h usage: \(Int(manager.usageData.h5Utilization * 100))%")
+                        Text("7d usage: \(Int(manager.usageData.d7Utilization * 100))%")
+                        if let updated = manager.lastUpdated {
+                            Text("Last updated: \(updated.formatted(.relative(presentation: .named)))")
+                                .foregroundStyle(.secondary)
+                                .font(.caption)
+                        }
+                        if let error = manager.errorMessage {
+                            Text(error)
+                                .foregroundStyle(.red)
+                                .font(.caption)
+                        }
+                    }
+                    Spacer()
+                    Button("Refresh now") {
+                        Task { await manager.fetchUsage() }
+                    }
+                    .disabled(!showClaudeUsage || manager.isLoading)
+                }
+            } header: {
+                Text("Status")
+            }
+        }
+        .accentColor(.effectiveAccent)
+        .navigationTitle("Claude Usage")
+        .onAppear {
+            apiKeyInput = ClaudeUsageManager.shared.apiKey
         }
     }
 }
