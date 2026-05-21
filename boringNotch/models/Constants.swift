@@ -180,6 +180,7 @@ extension Defaults.Keys {
     // MARK: Claude Usage
     static let showClaudeUsage = Key<Bool>("showClaudeUsage", default: false)
     static let claudeUsageRefreshInterval = Key<Double>("claudeUsageRefreshInterval", default: 120)
+    static let claudeAuthMode = Key<ClaudeAuthMode>("claudeAuthMode", default: .oauth)
     
     // MARK: Fullscreen Media Detection
     static let hideNotchOption = Key<HideNotchOption>("hideNotchOption", default: .nowPlayingOnly)

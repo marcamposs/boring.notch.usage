@@ -401,6 +401,9 @@
         }
       }
     },
+    "{\"claudeAiOauth\":…}" : {
+
+    },
     "%.0f seconds" : {
       "localizations" : {
         "ar" : {
@@ -5217,6 +5220,9 @@
     "Claude" : {
 
     },
+    "Claude Pro/Max Connection" : {
+
+    },
     "Claude Usage" : {
 
     },
@@ -5919,6 +5925,12 @@
           }
         }
       }
+    },
+    "Connected to your Claude plan" : {
+
+    },
+    "Connection type" : {
+
     },
     "Continue" : {
       "localizations" : {
@@ -7423,7 +7435,10 @@
         }
       }
     },
-    "Displays 5-hour and 7-day API token utilization next to the calendar." : {
+    "Disconnect" : {
+
+    },
+    "Displays your 5-hour and 7-day Claude usage next to the calendar." : {
 
     },
     "Download" : {
@@ -17743,6 +17758,9 @@
         }
       }
     },
+    "Requires the Claude Code CLI, logged in with your Pro/Max plan. The token refreshes automatically once pasted; stored securely in the system Keychain." : {
+
+    },
     "Reset to Defaults" : {
       "localizations" : {
         "ar" : {
@@ -21262,6 +21280,9 @@
         }
       }
     },
+    "This app is sandboxed and can't read Claude Code's credentials directly. Run this in Terminal and paste the output above:" : {
+
+    },
     "Time to Full Charge: %lld min" : {
       "localizations" : {
         "ar" : {
@@ -23463,7 +23484,7 @@
         }
       }
     },
-    "Your Anthropic API key. Stored securely in the system Keychain." : {
+    "Your Anthropic API key. Shows rate-limit usage for that key. Stored securely in the system Keychain." : {
 
     },
     "Your macOS system accent color" : {

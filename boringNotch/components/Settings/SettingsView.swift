@@ -823,9 +823,14 @@ struct CalendarSettings: View {
 struct ClaudeSettings: View {
     @Default(.showClaudeUsage) var showClaudeUsage
     @Default(.claudeUsageRefreshInterval) var refreshInterval
+    @Default(.claudeAuthMode) var authMode
     @ObservedObject private var manager = ClaudeUsageManager.shared
     @State private var apiKeyInput: String = ""
+    @State private var oauthInput: String = ""
+    @State private var oauthSaveError: String?
     @State private var showKey: Bool = false
+
+    private let credentialsCommand = "security find-generic-password -s \"Claude Code-credentials\" -w"
 
     var body: some View {
         Form {
@@ -833,46 +838,123 @@ struct ClaudeSettings: View {
                 Defaults.Toggle(key: .showClaudeUsage) {
                     Text("Show Claude usage widget")
                 }
+                Picker("Connection type", selection: $authMode) {
+                    ForEach(ClaudeAuthMode.allCases) { mode in
+                        Text(mode.rawValue).tag(mode)
+                    }
+                }
+                .pickerStyle(.segmented)
+                .onChange(of: authMode) {
+                    if showClaudeUsage { Task { await manager.fetchUsage() } }
+                }
             } header: {
                 Text("General")
             } footer: {
-                Text("Displays 5-hour and 7-day API token utilization next to the calendar.")
+                Text("Displays your 5-hour and 7-day Claude usage next to the calendar.")
                     .foregroundStyle(.secondary)
                     .font(.caption)
             }
 
-            Section {
-                HStack {
-                    if showKey {
-                        TextField("sk-ant-…", text: $apiKeyInput)
-                            .textFieldStyle(.plain)
-                            .font(.system(.body, design: .monospaced))
-                    } else {
-                        SecureField("sk-ant-…", text: $apiKeyInput)
-                            .textFieldStyle(.plain)
-                            .font(.system(.body, design: .monospaced))
+            if authMode == .apiKey {
+                Section {
+                    HStack {
+                        if showKey {
+                            TextField("sk-ant-…", text: $apiKeyInput)
+                                .textFieldStyle(.plain)
+                                .font(.system(.body, design: .monospaced))
+                        } else {
+                            SecureField("sk-ant-…", text: $apiKeyInput)
+                                .textFieldStyle(.plain)
+                                .font(.system(.body, design: .monospaced))
+                        }
+                        Button {
+                            withAnimation { showKey.toggle() }
+                        } label: {
+                            Image(systemName: showKey ? "eye.slash" : "eye")
+                                .foregroundStyle(.secondary)
+                        }
+                        .buttonStyle(PlainButtonStyle())
+                        Button("Save") {
+                            manager.apiKey = apiKeyInput
+                            if showClaudeUsage {
+                                Task { await manager.fetchUsage() }
+                            }
+                        }
+                        .disabled(apiKeyInput.isEmpty)
                     }
-                    Button {
-                        withAnimation { showKey.toggle() }
-                    } label: {
-                        Image(systemName: showKey ? "eye.slash" : "eye")
-                            .foregroundStyle(.secondary)
-                    }
-                    .buttonStyle(PlainButtonStyle())
-                    Button("Save") {
-                        manager.apiKey = apiKeyInput
-                        if showClaudeUsage {
-                            Task { await manager.fetchUsage() }
+                } header: {
+                    Text("API Key")
+                } footer: {
+                    Text("Your Anthropic API key. Shows rate-limit usage for that key. Stored securely in the system Keychain.")
+                        .foregroundStyle(.secondary)
+                        .font(.caption)
+                }
+            } else {
+                Section {
+                    if manager.hasOAuthCredentials {
+                        HStack(spacing: 6) {
+                            Image(systemName: "checkmark.circle.fill")
+                                .foregroundStyle(.green)
+                            Text("Connected to your Claude plan")
+                            Spacer()
+                            Button("Disconnect") {
+                                manager.clearOAuthCredentials()
+                                oauthInput = ""
+                                oauthSaveError = nil
+                            }
                         }
                     }
-                    .disabled(apiKeyInput.isEmpty)
-                }
-            } header: {
-                Text("API Key")
-            } footer: {
-                Text("Your Anthropic API key. Stored securely in the system Keychain.")
+                    HStack {
+                        if showKey {
+                            TextField("{\"claudeAiOauth\":…}", text: $oauthInput)
+                                .textFieldStyle(.plain)
+                                .font(.system(.body, design: .monospaced))
+                        } else {
+                            SecureField("{\"claudeAiOauth\":…}", text: $oauthInput)
+                                .textFieldStyle(.plain)
+                                .font(.system(.body, design: .monospaced))
+                        }
+                        Button {
+                            withAnimation { showKey.toggle() }
+                        } label: {
+                            Image(systemName: showKey ? "eye.slash" : "eye")
+                                .foregroundStyle(.secondary)
+                        }
+                        .buttonStyle(PlainButtonStyle())
+                        Button("Save") {
+                            if manager.saveOAuthInput(oauthInput) {
+                                oauthInput = ""
+                                oauthSaveError = nil
+                                if showClaudeUsage {
+                                    Task { await manager.fetchUsage() }
+                                }
+                            } else {
+                                oauthSaveError = "Couldn't read credentials. Paste the full JSON from the command below."
+                            }
+                        }
+                        .disabled(oauthInput.isEmpty)
+                    }
+                    if let oauthSaveError {
+                        Text(oauthSaveError)
+                            .foregroundStyle(.red)
+                            .font(.caption)
+                    }
+                } header: {
+                    Text("Claude Pro/Max Connection")
+                } footer: {
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text("This app is sandboxed and can't read Claude Code's credentials directly. Run this in Terminal and paste the output above:")
+                        Text(credentialsCommand)
+                            .font(.system(.caption, design: .monospaced))
+                            .textSelection(.enabled)
+                            .padding(6)
+                            .background(Color.primary.opacity(0.06))
+                            .cornerRadius(4)
+                        Text("Requires the Claude Code CLI, logged in with your Pro/Max plan. The token refreshes automatically once pasted; stored securely in the system Keychain.")
+                    }
                     .foregroundStyle(.secondary)
                     .font(.caption)
+                }
             }
 
             Section {

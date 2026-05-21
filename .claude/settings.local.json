@@ -6,7 +6,17 @@
       "Bash(find /tmp/claude-usage-repo -type f -name \"*.md\" -o -name \"*.cpp\" -o -name \"*.py\" -o -name \"*.json\" | head -30)",
       "Read(//private/tmp/claude-usage-repo/**)",
       "Read(//tmp/claude-usage-repo/**)",
-      "Bash(xcodebuild -project boringNotch.xcodeproj -scheme boringNotch -configuration Debug build)"
+      "Bash(xcodebuild -project boringNotch.xcodeproj -scheme boringNotch -configuration Debug build)",
+      "WebSearch",
+      "Bash(gh issue *)",
+      "Bash(security find-generic-password *)",
+      "Bash(echo \"---exit:$?---\")",
+      "Read(//Users/marcelocampos/.claude/**)",
+      "Bash(echo \"file-exit:$?\")",
+      "WebFetch(domain:raw.githubusercontent.com)",
+      "Bash(xcode-select -p)",
+      "Bash(xcodebuild -version)",
+      "Bash(xcodebuild -project boringNotch.xcodeproj -scheme boringNotch -configuration Debug -destination 'platform=macOS' build CODE_SIGNING_ALLOWED=NO)"
     ]
   }
 }
