@@ -1001,6 +1001,9 @@
         }
       }
     },
+    "%llds" : {
+
+    },
     "• Bug fixes" : {
       "localizations" : {
         "ar" : {
@@ -1300,6 +1303,12 @@
           }
         }
       }
+    },
+    "5h usage: %lld%%" : {
+
+    },
+    "7d usage: %lld%%" : {
+
     },
     "About" : {
       "localizations" : {
@@ -2601,6 +2610,9 @@
           }
         }
       }
+    },
+    "API Key" : {
+
     },
     "App icon" : {
       "localizations" : {
@@ -5202,6 +5214,12 @@
         }
       }
     },
+    "Claude" : {
+
+    },
+    "Claude Usage" : {
+
+    },
     "Clear slot" : {
       "localizations" : {
         "ar" : {
@@ -7404,6 +7422,9 @@
           }
         }
       }
+    },
+    "Displays 5-hour and 7-day API token utilization next to the calendar." : {
+
     },
     "Download" : {
       "localizations" : {
@@ -11908,6 +11929,9 @@
           }
         }
       }
+    },
+    "Last updated: %@" : {
+
     },
     "Layout Preview" : {
       "localizations" : {
@@ -16910,6 +16934,15 @@
         }
       }
     },
+    "Refresh" : {
+
+    },
+    "Refresh interval" : {
+
+    },
+    "Refresh now" : {
+
+    },
     "Release name" : {
       "localizations" : {
         "ar" : {
@@ -17810,6 +17843,9 @@
         }
       }
     },
+    "resets %@" : {
+
+    },
     "Restart" : {
       "extractionState" : "stale",
       "localizations" : {
@@ -18111,6 +18147,9 @@
           }
         }
       }
+    },
+    "Save" : {
+
     },
     "Select the music source you want to use. You can change this later in the app settings." : {
       "localizations" : {
@@ -19011,6 +19050,9 @@
           }
         }
       }
+    },
+    "Show Claude usage widget" : {
+
     },
     "Show cool face animation while inactive" : {
       "localizations" : {
@@ -20212,6 +20254,9 @@
         }
       }
     },
+    "sk-ant-…" : {
+
+    },
     "Slider color" : {
       "localizations" : {
         "ar" : {
@@ -20811,6 +20856,9 @@
           }
         }
       }
+    },
+    "Status" : {
+
     },
     "Stopped" : {
       "extractionState" : "stale",
@@ -23414,6 +23462,9 @@
           }
         }
       }
+    },
+    "Your Anthropic API key. Stored securely in the system Keychain." : {
+
     },
     "Your macOS system accent color" : {
       "localizations" : {
