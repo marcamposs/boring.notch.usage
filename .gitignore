@@ -53,3 +53,6 @@ build/
 *.xcarchive
 *.dSYM
 
+# Local build notes
+BUILD_LOCAL.md
+

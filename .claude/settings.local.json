@@ -17,7 +17,10 @@
       "Bash(xcode-select -p)",
       "Bash(xcodebuild -version)",
       "Bash(xcodebuild -project boringNotch.xcodeproj -scheme boringNotch -configuration Debug -destination 'platform=macOS' build CODE_SIGNING_ALLOWED=NO)",
-      "Bash(xcodebuild -list -project boringNotch.xcodeproj)"
+      "Bash(xcodebuild -list -project boringNotch.xcodeproj)",
+      "Bash(sed -n '185,225p' boringNotch/boringNotchApp.swift)",
+      "Bash(sed -n '635,665p' boringNotch/ContentView.swift)",
+      "Bash(sed -n '185,210p' boringNotch/models/BoringViewModel.swift)"
     ]
   }
 }

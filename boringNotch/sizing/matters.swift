@@ -13,8 +13,25 @@ let downloadSneakSize: CGSize = .init(width: 65, height: 1)
 let batterySneakSize: CGSize = .init(width: 160, height: 1)
 
 let shadowPadding: CGFloat = 20
-let openNotchSize: CGSize = .init(width: 640, height: 190)
-let windowSize: CGSize = .init(width: openNotchSize.width, height: openNotchSize.height + shadowPadding)
+
+let baseOpenNotchSize: CGSize = .init(width: 640, height: 190)
+
+/// Extra width the open notch needs to fit the Claude usage column
+/// (120pt column + 15pt HStack spacing in NotchHomeView).
+let claudeUsageExtraWidth: CGFloat = 135
+
+/// Open notch size, widened when the Claude usage column is visible so its
+/// content stays inside the rounded notch shape instead of clipping the edge.
+var openNotchSize: CGSize {
+    .init(
+        width: baseOpenNotchSize.width + (Defaults[.showClaudeUsage] ? claudeUsageExtraWidth : 0),
+        height: baseOpenNotchSize.height
+    )
+}
+
+var windowSize: CGSize {
+    .init(width: openNotchSize.width, height: openNotchSize.height + shadowPadding)
+}
 let cornerRadiusInsets: (opened: (top: CGFloat, bottom: CGFloat), closed: (top: CGFloat, bottom: CGFloat)) = (opened: (top: 19, bottom: 24), closed: (top: 6, bottom: 14))
 
 enum MusicPlayerImageSizes {

@@ -447,13 +447,14 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                 ClaudeUsageManager.shared.startPolling(interval: Defaults[.claudeUsageRefreshInterval])
             }
         }
-        Defaults.observe(.showClaudeUsage) { change in
+        Defaults.observe(.showClaudeUsage) { [weak self] change in
             Task { @MainActor in
                 if change.newValue {
                     ClaudeUsageManager.shared.startPolling(interval: Defaults[.claudeUsageRefreshInterval])
                 } else {
                     ClaudeUsageManager.shared.stopPolling()
                 }
+                self?.resizeNotchWindow()
             }
         }.tieToLifetime(of: self)
         Defaults.observe(.claudeUsageRefreshInterval) { change in
@@ -462,6 +463,20 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                 ClaudeUsageManager.shared.startPolling(interval: change.newValue)
             }
         }.tieToLifetime(of: self)
+    }
+
+    /// Resizes and re-centers the notch window after `windowSize` changes
+    /// (e.g. when the Claude usage column is shown or hidden).
+    @MainActor
+    private func resizeNotchWindow() {
+        guard let window else { return }
+        window.setContentSize(windowSize)
+        let screen = window.screen
+            ?? NSScreen.screen(withUUID: coordinator.selectedScreenUUID)
+            ?? NSScreen.main
+        if let screen {
+            positionWindow(window, on: screen)
+        }
     }
 
     func playWelcomeSound() {
