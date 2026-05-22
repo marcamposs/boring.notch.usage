@@ -16,7 +16,8 @@
       "WebFetch(domain:raw.githubusercontent.com)",
       "Bash(xcode-select -p)",
       "Bash(xcodebuild -version)",
-      "Bash(xcodebuild -project boringNotch.xcodeproj -scheme boringNotch -configuration Debug -destination 'platform=macOS' build CODE_SIGNING_ALLOWED=NO)"
+      "Bash(xcodebuild -project boringNotch.xcodeproj -scheme boringNotch -configuration Debug -destination 'platform=macOS' build CODE_SIGNING_ALLOWED=NO)",
+      "Bash(xcodebuild -list -project boringNotch.xcodeproj)"
     ]
   }
 }

@@ -3,9 +3,12 @@
 //  boringNotch
 //
 
+import AppKit
 import Combine
+import CryptoKit
 import Defaults
 import Foundation
+import Network
 import Security
 
 struct ClaudeUsageData {
@@ -13,13 +16,6 @@ struct ClaudeUsageData {
     var d7Utilization: Double = 0   // 0.0–1.0
     var h5ResetDate: Date?
     var d7ResetDate: Date?
-}
-
-enum ClaudeAuthMode: String, CaseIterable, Identifiable, Defaults.Serializable {
-    case oauth = "Claude Pro/Max"
-    case apiKey = "API Key"
-
-    var id: String { rawValue }
 }
 
 @MainActor
@@ -31,61 +27,79 @@ class ClaudeUsageManager: ObservableObject {
     @Published var errorMessage: String?
     @Published var lastUpdated: Date?
 
+    @Published var isLoggingIn: Bool = false
+    @Published var loginError: String?
+    @Published private(set) var isConnected: Bool = false
+
     private var pollingTimer: Timer?
-    private let apiKeyService = "com.boringnotch.claude-api-key"
     private let oauthService = "com.boringnotch.claude-oauth"
 
-    // Public OAuth client id used by Claude Code for token refresh.
+    // Public OAuth client id used by Claude Code.
     private let oauthClientID = "9d1c250a-e61b-44d9-88ed-5944d1962f5e"
+    private let oauthScopes = "org:create_api_key user:profile user:inference"
+    private let callbackPort: UInt16 = 54545
+    private var redirectURI: String { "http://localhost:\(callbackPort)/callback" }
 
-    private init() {}
+    // Decoded credentials are cached in memory so the Keychain is read once at
+    // launch instead of on every SwiftUI render and every poll.
+    private var cachedCredentials: OAuthCredentials?
+
+    // Transient login-flow state.
+    private var listener: NWListener?
+    private var pendingVerifier: String?
+    private var pendingState: String?
+    private var pendingAuthURL: URL?
+
+    private init() {
+        cachedCredentials = loadOAuthCredentialsFromKeychain()
+        isConnected = cachedCredentials != nil
+    }
 
     // MARK: - Keychain
 
+    // All queries opt into the data-protection keychain: access is gated by the
+    // app's entitlements/access-group rather than an interactive ACL, so a
+    // sandboxed app reads its own items without any permission prompts.
+
     private func saveToKeychain(service: String, value: String) {
-        let data = Data(value.utf8)
-        let query: [CFString: Any] = [
+        let base: [CFString: Any] = [
             kSecClass: kSecClassGenericPassword,
             kSecAttrService: service,
-            kSecValueData: data
+            kSecUseDataProtectionKeychain: true
         ]
-        SecItemDelete(query as CFDictionary)
-        SecItemAdd(query as CFDictionary, nil)
+        SecItemDelete(base as CFDictionary)
+
+        var add = base
+        add[kSecValueData] = Data(value.utf8)
+        add[kSecAttrAccessible] = kSecAttrAccessibleAfterFirstUnlock
+
+        let status = SecItemAdd(add as CFDictionary, nil)
+        if status != errSecSuccess {
+            NSLog("ClaudeUsage: keychain save failed (OSStatus \(status))")
+        }
     }
 
     private func loadFromKeychain(service: String) -> String? {
         let query: [CFString: Any] = [
             kSecClass: kSecClassGenericPassword,
             kSecAttrService: service,
+            kSecUseDataProtectionKeychain: true,
             kSecReturnData: true,
             kSecMatchLimit: kSecMatchLimitOne
         ]
         var result: AnyObject?
-        guard SecItemCopyMatching(query as CFDictionary, &result) == errSecSuccess,
-              let data = result as? Data
-        else { return nil }
+        let status = SecItemCopyMatching(query as CFDictionary, &result)
+        guard status == errSecSuccess, let data = result as? Data else { return nil }
         return String(data: data, encoding: .utf8)
     }
 
     private func deleteFromKeychain(service: String) {
         let query: [CFString: Any] = [
             kSecClass: kSecClassGenericPassword,
-            kSecAttrService: service
+            kSecAttrService: service,
+            kSecUseDataProtectionKeychain: true
         ]
         SecItemDelete(query as CFDictionary)
-    }
-
-    // MARK: - API key
-
-    var apiKey: String {
-        get { loadFromKeychain(service: apiKeyService) ?? "" }
-        set {
-            if newValue.isEmpty {
-                deleteFromKeychain(service: apiKeyService)
-            } else {
-                saveToKeychain(service: apiKeyService, value: newValue)
-            }
-        }
     }
 
     // MARK: - OAuth credentials
@@ -96,11 +110,7 @@ class ClaudeUsageManager: ObservableObject {
         var expiresAt: Date?
     }
 
-    var hasOAuthCredentials: Bool {
-        loadOAuthCredentials() != nil
-    }
-
-    private func loadOAuthCredentials() -> OAuthCredentials? {
+    private func loadOAuthCredentialsFromKeychain() -> OAuthCredentials? {
         guard let json = loadFromKeychain(service: oauthService),
               let data = json.data(using: .utf8)
         else { return nil }
@@ -108,6 +118,8 @@ class ClaudeUsageManager: ObservableObject {
     }
 
     private func storeOAuthCredentials(_ creds: OAuthCredentials) {
+        cachedCredentials = creds
+        isConnected = true
         guard let data = try? JSONEncoder().encode(creds),
               let json = String(data: data, encoding: .utf8)
         else { return }
@@ -115,40 +127,12 @@ class ClaudeUsageManager: ObservableObject {
     }
 
     func clearOAuthCredentials() {
+        cachedCredentials = nil
+        isConnected = false
         deleteFromKeychain(service: oauthService)
-    }
-
-    /// Accepts either the full Claude Code credentials JSON
-    /// (`{"claudeAiOauth":{...}}`) or a bare `sk-ant-oat…` access token.
-    /// Returns true when valid credentials were stored.
-    @discardableResult
-    func saveOAuthInput(_ raw: String) -> Bool {
-        let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else {
-            clearOAuthCredentials()
-            return false
-        }
-
-        if let data = trimmed.data(using: .utf8),
-           let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
-            let oauth = (obj["claudeAiOauth"] as? [String: Any]) ?? obj
-            if let token = oauth["accessToken"] as? String, !token.isEmpty {
-                var creds = OAuthCredentials(accessToken: token)
-                creds.refreshToken = oauth["refreshToken"] as? String
-                if let ms = oauth["expiresAt"] as? Double {
-                    creds.expiresAt = Date(timeIntervalSince1970: ms / 1000)
-                }
-                storeOAuthCredentials(creds)
-                return true
-            }
-        }
-
-        if trimmed.hasPrefix("sk-ant-oat") {
-            storeOAuthCredentials(OAuthCredentials(accessToken: trimmed))
-            return true
-        }
-
-        return false
+        usageData = .init()
+        lastUpdated = nil
+        errorMessage = nil
     }
 
     // MARK: - Polling
@@ -175,16 +159,7 @@ class ClaudeUsageManager: ObservableObject {
         errorMessage = nil
 
         do {
-            let data: ClaudeUsageData
-            switch Defaults[.claudeAuthMode] {
-            case .apiKey:
-                let key = apiKey
-                guard !key.isEmpty else { throw usageError("No API key set") }
-                data = try await performProbeRequest(apiKey: key)
-            case .oauth:
-                data = try await performOAuthUsageRequest()
-            }
-            usageData = data
+            usageData = try await performOAuthUsageRequest()
             lastUpdated = Date()
             errorMessage = nil
         } catch {
@@ -198,59 +173,11 @@ class ClaudeUsageManager: ObservableObject {
         NSError(domain: "ClaudeUsage", code: code, userInfo: [NSLocalizedDescriptionKey: message])
     }
 
-    // MARK: - API key probe
-
-    private func performProbeRequest(apiKey: String) async throws -> ClaudeUsageData {
-        var request = URLRequest(url: URL(string: "https://api.anthropic.com/v1/messages")!)
-        request.httpMethod = "POST"
-        request.setValue(apiKey, forHTTPHeaderField: "x-api-key")
-        request.setValue("2023-06-01", forHTTPHeaderField: "anthropic-version")
-        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.timeoutInterval = 15
-
-        let body: [String: Any] = [
-            "model": "claude-haiku-4-5-20251001",
-            "max_tokens": 1,
-            "messages": [["role": "user", "content": "."]]
-        ]
-        request.httpBody = try JSONSerialization.data(withJSONObject: body)
-
-        let (_, response) = try await URLSession.shared.data(for: request)
-        guard let http = response as? HTTPURLResponse else {
-            throw URLError(.badServerResponse)
-        }
-
-        if http.statusCode == 401 {
-            throw usageError("Invalid API key", code: 401)
-        }
-
-        var result = ClaudeUsageData()
-        let headers = http.allHeaderFields
-        if let raw = headers["anthropic-ratelimit-unified-5h-utilization"] as? String,
-           let val = Double(raw) {
-            result.h5Utilization = val
-        }
-        if let raw = headers["anthropic-ratelimit-unified-7d-utilization"] as? String,
-           let val = Double(raw) {
-            result.d7Utilization = val
-        }
-        if let raw = headers["anthropic-ratelimit-unified-5h-reset"] as? String,
-           let epoch = Double(raw) {
-            result.h5ResetDate = Date(timeIntervalSince1970: epoch)
-        }
-        if let raw = headers["anthropic-ratelimit-unified-7d-reset"] as? String,
-           let epoch = Double(raw) {
-            result.d7ResetDate = Date(timeIntervalSince1970: epoch)
-        }
-
-        return result
-    }
-
     // MARK: - OAuth usage
 
     private func performOAuthUsageRequest() async throws -> ClaudeUsageData {
-        guard var creds = loadOAuthCredentials() else {
-            throw usageError("Not connected — paste your Claude Code credentials in Settings")
+        guard var creds = cachedCredentials else {
+            throw usageError("Not signed in — open Settings to connect your Claude plan")
         }
 
         // Refresh proactively when the token is expired or about to expire.
@@ -334,7 +261,7 @@ class ClaudeUsageManager: ObservableObject {
 
     private func refreshOAuthToken(_ creds: OAuthCredentials) async throws -> OAuthCredentials {
         guard let refreshToken = creds.refreshToken else {
-            throw usageError("OAuth token expired — paste fresh Claude Code credentials in Settings", code: 401)
+            throw usageError("Session expired — sign in again in Settings", code: 401)
         }
 
         var request = URLRequest(url: URL(string: "https://console.anthropic.com/v1/oauth/token")!)
@@ -349,7 +276,7 @@ class ClaudeUsageManager: ObservableObject {
 
         let (data, response) = try await URLSession.shared.data(for: request)
         guard let http = response as? HTTPURLResponse, http.statusCode == 200 else {
-            throw usageError("Could not refresh OAuth token — paste fresh Claude Code credentials in Settings", code: 401)
+            throw usageError("Couldn't refresh your session — sign in again in Settings", code: 401)
         }
 
         let decoded = try JSONDecoder().decode(TokenResponse.self, from: data)
@@ -363,5 +290,241 @@ class ClaudeUsageManager: ObservableObject {
         }
         storeOAuthCredentials(updated)
         return updated
+    }
+
+    // MARK: - OAuth login (PKCE + loopback redirect)
+
+    func startLogin() {
+        guard !isLoggingIn else { return }
+        loginError = nil
+
+        let verifier = Self.randomURLSafeString(byteCount: 32)
+        let state = Self.randomURLSafeString(byteCount: 32)
+        pendingVerifier = verifier
+        pendingState = state
+
+        var components = URLComponents(string: "https://claude.ai/oauth/authorize")!
+        components.queryItems = [
+            URLQueryItem(name: "client_id", value: oauthClientID),
+            URLQueryItem(name: "response_type", value: "code"),
+            URLQueryItem(name: "redirect_uri", value: redirectURI),
+            URLQueryItem(name: "scope", value: oauthScopes),
+            URLQueryItem(name: "code_challenge", value: Self.codeChallenge(for: verifier)),
+            URLQueryItem(name: "code_challenge_method", value: "S256"),
+            URLQueryItem(name: "state", value: state)
+        ]
+        guard let url = components.url else {
+            loginError = "Couldn't build the sign-in URL."
+            return
+        }
+        pendingAuthURL = url
+
+        isLoggingIn = true
+        do {
+            try startCallbackServer()
+        } catch {
+            finishLogin(.failure(usageError("Couldn't start the sign-in listener on port \(callbackPort).")))
+        }
+    }
+
+    func cancelLogin() {
+        guard isLoggingIn else { return }
+        cleanupLogin()
+        isLoggingIn = false
+        loginError = nil
+    }
+
+    private func cleanupLogin() {
+        listener?.cancel()
+        listener = nil
+        pendingVerifier = nil
+        pendingState = nil
+        pendingAuthURL = nil
+    }
+
+    private func finishLogin(_ result: Result<Void, Error>) {
+        cleanupLogin()
+        isLoggingIn = false
+        switch result {
+        case .success:
+            loginError = nil
+            if Defaults[.showClaudeUsage] {
+                startPolling(interval: Defaults[.claudeUsageRefreshInterval])
+            } else {
+                Task { await fetchUsage() }
+            }
+        case .failure(let error):
+            loginError = error.localizedDescription
+        }
+    }
+
+    // MARK: - Loopback callback server
+
+    private func startCallbackServer() throws {
+        let params = NWParameters.tcp
+        params.allowLocalEndpointReuse = true
+        params.requiredLocalEndpoint = .hostPort(
+            host: .ipv4(.loopback),
+            port: NWEndpoint.Port(rawValue: callbackPort)!
+        )
+
+        let listener = try NWListener(using: params)
+        self.listener = listener
+
+        listener.stateUpdateHandler = { [weak self] state in
+            Task { @MainActor in
+                guard let self else { return }
+                switch state {
+                case .ready:
+                    if let url = self.pendingAuthURL {
+                        NSWorkspace.shared.open(url)
+                    }
+                case .failed(let error):
+                    self.finishLogin(.failure(self.usageError(
+                        "Couldn't start the sign-in listener (\(error.localizedDescription)).")))
+                default:
+                    break
+                }
+            }
+        }
+
+        listener.newConnectionHandler = { [weak self] connection in
+            connection.start(queue: .main)
+            Task { @MainActor in
+                self?.receiveRequest(on: connection)
+            }
+        }
+
+        listener.start(queue: .main)
+    }
+
+    private func receiveRequest(on connection: NWConnection) {
+        connection.receive(minimumIncompleteLength: 1, maximumLength: 8192) { [weak self] data, _, _, _ in
+            let request = data.flatMap { String(data: $0, encoding: .utf8) }
+            Task { @MainActor in
+                guard let self else { return }
+                guard let request,
+                      let requestLine = request.split(separator: "\r\n").first,
+                      let path = requestLine.split(separator: " ").dropFirst().first
+                else {
+                    connection.cancel()
+                    return
+                }
+                self.handleCallback(path: String(path), connection: connection)
+            }
+        }
+    }
+
+    private func handleCallback(path: String, connection: NWConnection) {
+        guard path.hasPrefix("/callback") else {
+            respond(on: connection, success: false)
+            return
+        }
+
+        let items = URLComponents(string: "http://localhost\(path)")?.queryItems ?? []
+        let code = items.first { $0.name == "code" }?.value
+        let returnedState = items.first { $0.name == "state" }?.value
+        let oauthError = items.first { $0.name == "error" }?.value
+
+        respond(on: connection, success: oauthError == nil && code != nil && returnedState != nil)
+
+        if let oauthError {
+            finishLogin(.failure(usageError("Sign-in was denied (\(oauthError)).")))
+            return
+        }
+        guard let code, let returnedState else {
+            finishLogin(.failure(usageError("The sign-in response was incomplete — please try again.")))
+            return
+        }
+        guard returnedState == pendingState else {
+            finishLogin(.failure(usageError("Sign-in could not be verified — please try again.")))
+            return
+        }
+        guard let verifier = pendingVerifier else {
+            finishLogin(.failure(usageError("The sign-in session expired — please try again.")))
+            return
+        }
+        Task { await exchangeCode(code, state: returnedState, verifier: verifier) }
+    }
+
+    private func respond(on connection: NWConnection, success: Bool) {
+        let title = success ? "Signed in" : "Sign-in failed"
+        let message = success
+            ? "You're connected. You can close this tab and return to boring.notch."
+            : "Something went wrong. Return to boring.notch and try again."
+        let html = """
+        <!doctype html><html><head><meta charset="utf-8"><title>\(title)</title>
+        <style>html,body{height:100%;margin:0}body{font-family:-apple-system,BlinkMacSystemFont,sans-serif;\
+        background:#1c1c1e;color:#fff;display:flex;align-items:center;justify-content:center}\
+        .card{text-align:center;padding:32px}h1{font-size:20px;margin:0 0 8px}\
+        p{color:#9b9b9f;margin:0;font-size:14px}</style></head>
+        <body><div class="card"><h1>\(title)</h1><p>\(message)</p></div></body></html>
+        """
+        let body = Data(html.utf8)
+        let header = "HTTP/1.1 200 OK\r\n" +
+            "Content-Type: text/html; charset=utf-8\r\n" +
+            "Content-Length: \(body.count)\r\n" +
+            "Connection: close\r\n\r\n"
+        var payload = Data(header.utf8)
+        payload.append(body)
+        connection.send(content: payload, completion: .contentProcessed { _ in
+            connection.cancel()
+        })
+    }
+
+    private func exchangeCode(_ code: String, state: String, verifier: String) async {
+        do {
+            var request = URLRequest(url: URL(string: "https://console.anthropic.com/v1/oauth/token")!)
+            request.httpMethod = "POST"
+            request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+            request.timeoutInterval = 20
+            request.httpBody = try JSONSerialization.data(withJSONObject: [
+                "grant_type": "authorization_code",
+                "code": code,
+                "state": state,
+                "client_id": oauthClientID,
+                "redirect_uri": redirectURI,
+                "code_verifier": verifier
+            ])
+
+            let (data, response) = try await URLSession.shared.data(for: request)
+            guard let http = response as? HTTPURLResponse, http.statusCode == 200 else {
+                let status = (response as? HTTPURLResponse)?.statusCode ?? -1
+                throw usageError("Sign-in couldn't be completed (HTTP \(status)).")
+            }
+
+            let decoded = try JSONDecoder().decode(TokenResponse.self, from: data)
+            var creds = OAuthCredentials(accessToken: decoded.access_token)
+            creds.refreshToken = decoded.refresh_token
+            if let expiresIn = decoded.expires_in {
+                creds.expiresAt = Date().addingTimeInterval(expiresIn)
+            }
+            storeOAuthCredentials(creds)
+            finishLogin(.success(()))
+        } catch {
+            finishLogin(.failure(error))
+        }
+    }
+
+    // MARK: - PKCE helpers
+
+    private static func randomURLSafeString(byteCount: Int) -> String {
+        var bytes = [UInt8](repeating: 0, count: byteCount)
+        _ = SecRandomCopyBytes(kSecRandomDefault, byteCount, &bytes)
+        return Data(bytes).base64URLEncodedString()
+    }
+
+    private static func codeChallenge(for verifier: String) -> String {
+        let hash = SHA256.hash(data: Data(verifier.utf8))
+        return Data(hash).base64URLEncodedString()
+    }
+}
+
+private extension Data {
+    func base64URLEncodedString() -> String {
+        base64EncodedString()
+            .replacingOccurrences(of: "+", with: "-")
+            .replacingOccurrences(of: "/", with: "_")
+            .replacingOccurrences(of: "=", with: "")
     }
 }

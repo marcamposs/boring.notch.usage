@@ -9,6 +9,10 @@ import SwiftUI
 import Defaults
 
 extension Color {
+    /// Claude brand accent — used for the Claude usage UI
+    /// regardless of the app-wide accent color.
+    static let claudeAccent = Color(red: 217 / 255, green: 119 / 255, blue: 87 / 255)
+
     static var effectiveAccent: Color {
         if Defaults[.useCustomAccentColor],
            let colorData = Defaults[.customAccentColorData],

@@ -23,9 +23,12 @@ struct ClaudeUsageView: View {
 
     private var header: some View {
         HStack(spacing: 4) {
-            Image(systemName: "sparkle")
-                .font(.caption2)
-                .foregroundColor(.effectiveAccent)
+            Image("ClaudeLogo")
+                .renderingMode(.template)
+                .resizable()
+                .aspectRatio(contentMode: .fit)
+                .frame(width: 14, height: 14)
+                .foregroundColor(.claudeAccent)
             Text("Claude")
                 .font(.title3)
                 .fontWeight(.semibold)
@@ -110,7 +113,7 @@ struct ClaudeUsageView: View {
     private func barColor(for value: Double) -> Color {
         if value >= 0.9 { return .red }
         if value >= 0.7 { return .orange }
-        return .effectiveAccent
+        return .claudeAccent
     }
 
     private func countdownString(to date: Date) -> String {
