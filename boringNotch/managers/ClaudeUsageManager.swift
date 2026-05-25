@@ -155,6 +155,7 @@ class ClaudeUsageManager: ObservableObject {
     // MARK: - Fetch
 
     func fetchUsage() async {
+        guard !isLoading else { return }
         isLoading = true
         errorMessage = nil
 
